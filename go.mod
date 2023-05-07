@@ -1,3 +1,3 @@
-module github.com/raghava-crypto/go-blockchain
+module blockchain
 
 go 1.19
