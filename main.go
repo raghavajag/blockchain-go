@@ -2,18 +2,13 @@ package main
 
 import (
 	"blockchain/blockchain"
-	"fmt"
+	"blockchain/cli"
 )
 
 func main() {
 	bc := blockchain.NewBlockchain()
-	bc.AddBlock("Send 1 BTC to dev")
-	bc.AddBlock("Send 2 more BTC to yv")
+	defer bc.DB.Close()
 
-	for _, block := range bc.Blocks {
-		fmt.Printf("Prev. hash: %x\n", block.PrevBlockHash)
-		fmt.Printf("Data: %s\n", block.Data)
-		fmt.Printf("Hash: %x\n", block.Hash)
-		fmt.Println()
-	}
+	cli := cli.CLI{BC: bc}
+	cli.Run()
 }
