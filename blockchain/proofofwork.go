@@ -1,7 +1,6 @@
-package proofofwork
+package blockchain
 
 import (
-	"blockchain/block"
 	"blockchain/utils"
 	"bytes"
 	"crypto/sha256"
@@ -17,11 +16,11 @@ var (
 const targetBits = 14
 
 type ProofOfWork struct {
-	block  *block.Block
+	block  *Block
 	target *big.Int
 }
 
-func NewProofOfWork(b *block.Block) *ProofOfWork {
+func NewProofOfWork(b *Block) *ProofOfWork {
 	target := big.NewInt(1)
 	target.Lsh(target, uint(256-targetBits))
 

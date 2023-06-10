@@ -1,9 +1,7 @@
 package blockchain
 
 import (
-	"blockchain/block"
-	"blockchain/proofofwork"
-	"time"
+	"log"
 
 	"github.com/boltdb/bolt"
 )
@@ -12,7 +10,7 @@ const dbFile = "data.db"
 const blocksBlucket = "blocks"
 
 type Blockchain struct {
-	// Blocks []*block.Block
+	// Blocks []*Block
 	tip []byte
 	DB  *bolt.DB
 }
@@ -26,13 +24,13 @@ func (bc *Blockchain) Iterator() *BlockchainIterator {
 
 	return bci
 }
-func (i *BlockchainIterator) Next() *block.Block {
-	var block_ *block.Block
+func (i *BlockchainIterator) Next() *Block {
+	var block_ *Block
 
 	err := i.DB.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(blocksBlucket))
 		encodedBlock := b.Get(i.currentHash)
-		block_ = block.DeserializeBlock(encodedBlock)
+		block_ = DeserializeBlock(encodedBlock)
 
 		return nil
 	})
@@ -95,7 +93,13 @@ func NewBlockchain() *Blockchain {
 			}
 
 			err = b.Put(genesis.Hash, genesis.Serialize())
+			if err != nil {
+				log.Fatal("Error while creating new block...")
+			}
 			err = b.Put([]byte("l"), genesis.Hash)
+			if err != nil {
+				log.Fatal("Error while creating new block...")
+			}
 			tip = genesis.Hash
 		} else {
 			tip = b.Get([]byte("l"))
@@ -103,28 +107,14 @@ func NewBlockchain() *Blockchain {
 
 		return nil
 	})
-
+	if err != nil {
+		log.Fatal("Error while creating new block...")
+	}
 	bc := Blockchain{tip, db}
 
 	return &bc
 }
 
-func NewGenesisBlock() *block.Block {
+func NewGenesisBlock() *Block {
 	return NewBlock("Genesis Block", []byte{})
-}
-
-func NewBlock(data string, prevBlockHash []byte) *block.Block {
-	block := &block.Block{
-		Timestamp:     time.Now().Unix(),
-		Data:          []byte(data),
-		PrevBlockHash: prevBlockHash,
-		Hash:          []byte{},
-		Nonce:         0}
-	pow := proofofwork.NewProofOfWork(block)
-	nonce, hash := pow.Run()
-
-	block.Hash = hash[:]
-	block.Nonce = nonce
-
-	return block
 }
