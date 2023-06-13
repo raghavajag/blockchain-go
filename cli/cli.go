@@ -25,6 +25,19 @@ func (cli *CLI) validateArgs() {
 		os.Exit(1)
 	}
 }
+func (cli *CLI) getBalance(address string) {
+	bc := blockchain.NewBlockchain(address)
+	defer bc.DB.Close()
+
+	balance := 0
+	UTXOs := bc.FindUTXO(address)
+
+	for _, out := range UTXOs {
+		balance += out.Value
+	}
+
+	fmt.Printf("Balance of '%s': %d\n", address, balance)
+}
 func (cli *CLI) createBlockchain(address string) {
 	bc := blockchain.CreateBlockchain(address)
 	bc.DB.Close()
@@ -83,14 +96,14 @@ func (cli *CLI) Run() {
 	if printChainCmd.Parsed() {
 		cli.printChain()
 	}
+
 	if getBalanceCmd.Parsed() {
 		if *getBalanceAddress == "" {
 			getBalanceCmd.Usage()
 			os.Exit(1)
 		}
-		// cli.getBalance(*getBalanceAddress)
+		cli.getBalance(*getBalanceAddress)
 	}
-
 	if createBlockchainCmd.Parsed() {
 		if *createBlockchainAddress == "" {
 			createBlockchainCmd.Usage()

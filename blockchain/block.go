@@ -15,7 +15,7 @@ type Block struct {
 	Nonce         int
 }
 
-func (b *Block) hashTransactions() []byte {
+func (b *Block) HashTransactions() []byte {
 	var txHashes [][]byte
 	var txHash [32]byte
 
@@ -23,10 +23,9 @@ func (b *Block) hashTransactions() []byte {
 		txHashes = append(txHashes, tx.ID)
 	}
 	txHash = sha256.Sum256(bytes.Join(txHashes, []byte{}))
-
 	return txHash[:]
-
 }
+
 func (b *Block) Serialize() []byte {
 	var result bytes.Buffer
 	encoder := gob.NewEncoder(&result)
@@ -55,7 +54,9 @@ func NewBlock(transactions []*Transaction, prevBlockHash []byte) *Block {
 		Timestamp:     time.Now().Unix(),
 		PrevBlockHash: prevBlockHash,
 		Hash:          []byte{},
-		Nonce:         0}
+		Nonce:         0,
+		Transactions:  transactions,
+	}
 	pow := NewProofOfWork(block)
 	nonce, hash := pow.Run()
 
