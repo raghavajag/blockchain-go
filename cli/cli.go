@@ -15,8 +15,9 @@ type CLI struct {
 
 func (cli *CLI) printUsage() {
 	fmt.Println("Usage:")
-	fmt.Println("  addblock -data BLOCK_DATA - add a block to the blockchain")
-	fmt.Println("  printchain - print all the blocks of the blockchain")
+	fmt.Println("  getbalance -address ADDRESS - Get balance of ADDRESS")
+	fmt.Println("  createblockchain -address ADDRESS - Create a blockchain and send genesis block reward to ADDRESS")
+	fmt.Println("  printchain - Print all the blocks of the blockchain")
 }
 
 func (cli *CLI) validateArgs() {
@@ -45,8 +46,10 @@ func (cli *CLI) createBlockchain(address string) {
 }
 
 func (cli *CLI) printChain() {
-	bci := cli.BC.Iterator()
+	bc := blockchain.NewBlockchain("")
+	defer bc.DB.Close()
 
+	bci := bc.Iterator()
 	for {
 		block := bci.Next()
 
@@ -55,7 +58,6 @@ func (cli *CLI) printChain() {
 		pow := blockchain.NewProofOfWork(block)
 		fmt.Printf("PoW: %s\n", strconv.FormatBool(pow.Validate()))
 		fmt.Println()
-
 		if len(block.PrevBlockHash) == 0 {
 			break
 		}
