@@ -22,12 +22,22 @@ type BlockchainIterator struct {
 	DB          *bolt.DB
 }
 
+/*
+The Iterator method is called on a Blockchain object and returns a new BlockchainIterator object.
+It initializes the iterator with the tip (current block hash) of the blockchain and the database instance.
+*/
 func (bc *Blockchain) Iterator() *BlockchainIterator {
 	bci := &BlockchainIterator{bc.tip, bc.DB}
 
 	return bci
 }
 
+/*
+The Next method is called on a BlockchainIterator object and returns the next block
+in the blockchain. It retrieves the encoded block data from the database using the current block hash
+stored in the iterator, deserializes it into a Block object, and updates the iterator's current hash
+to the previous block hash of the retrieved block. Finally, it returns the deserialized block.
+*/
 func (i *BlockchainIterator) Next() *Block {
 	var block_ *Block
 
@@ -47,7 +57,14 @@ func (i *BlockchainIterator) Next() *Block {
 	return block_
 }
 
-// FindUnspentTransactions returns a list of transactions containing unspent outputs
+/*
+FindUnspentTransactions returns a list of transactions containing unspent outputs.
+It iterates through the bc from tip and goes backwards.
+For each tx in a block, it checks if any of the tx output (Vout) can be unlocked (spent)
+with the provided address. Additionally, it keeps track of spent tx outputs (spentTXOs)
+to prevent double spending. This ensure that if an output has already been spent, it won't
+be considered as an unspent output again during subsequent interations.
+*/
 func (bc *Blockchain) FindUnspentTransactions(address string) []Transaction {
 	var unspentTXs []Transaction
 	spentTXOs := make(map[string][]int)
@@ -85,7 +102,7 @@ func (bc *Blockchain) FindUnspentTransactions(address string) []Transaction {
 			}
 		}
 
-		if len(block.PrevBlockHash) == 0 {
+		if len(block.PrevBlockHash) == 0 { // genesis block
 			break
 		}
 	}
@@ -141,6 +158,9 @@ func NewBlockchain(address string) *Blockchain {
 	return &bc
 }
 
+/*
+responsible for creating a new blockchain instance and initializing it with a genesis block.
+*/
 func CreateBlockchain(address string) *Blockchain {
 	if dbExists() {
 		fmt.Println("Blockchain already exists.")
