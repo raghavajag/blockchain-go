@@ -13,11 +13,14 @@ type CLI struct {
 	BC *blockchain.Blockchain
 }
 
+const nodeID = "5000"
+
 func (cli *CLI) printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  getbalance -address ADDRESS - Get balance of ADDRESS")
 	fmt.Println("  createblockchain -address ADDRESS - Create a blockchain and send genesis block reward to ADDRESS")
 	fmt.Println("  printchain - Print all the blocks of the blockchain")
+	fmt.Println("  createwallet - Generates a new key-pair and saves it into the wallet file")
 }
 
 func (cli *CLI) validateArgs() {
@@ -63,6 +66,12 @@ func (cli *CLI) printChain() {
 		}
 	}
 }
+func (cli *CLI) createWallet(nodeID string) {
+	wallets, _ := blockchain.NewWallets(nodeID)
+	address := wallets.CreateWallet()
+	wallets.SaveToFile(nodeID)
+	fmt.Printf("Your new address: %s\n", address)
+}
 
 // Run parses command line arguments and processes commands
 func (cli *CLI) Run() {
@@ -73,6 +82,7 @@ func (cli *CLI) Run() {
 	createBlockchainCmd := flag.NewFlagSet("createblockchain", flag.ExitOnError)
 	getBalanceAddress := getBalanceCmd.String("address", "", "The address to get balance for")
 	createBlockchainAddress := createBlockchainCmd.String("address", "", "The address to send genesis block reward to")
+	createWalletCmd := flag.NewFlagSet("createwallet", flag.ExitOnError)
 
 	switch os.Args[1] {
 	case "printchain":
@@ -87,6 +97,11 @@ func (cli *CLI) Run() {
 		}
 	case "getbalance":
 		err := getBalanceCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
+	case "createwallet":
+		err := createWalletCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Panic(err)
 		}
@@ -112,5 +127,8 @@ func (cli *CLI) Run() {
 			os.Exit(1)
 		}
 		cli.createBlockchain(*createBlockchainAddress)
+	}
+	if createWalletCmd.Parsed() {
+		cli.createWallet(nodeID)
 	}
 }
