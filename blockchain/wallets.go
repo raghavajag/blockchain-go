@@ -16,6 +16,15 @@ type Wallets struct {
 	Wallets map[string]*Wallet
 }
 
+func (ws *Wallets) GetAddresses() []string {
+	var addresses []string
+
+	for address := range ws.Wallets {
+		addresses = append(addresses, address)
+	}
+	return addresses
+}
+
 // NewWallets creates Wallets and fills it from a file if it exists
 func NewWallets(nodeID string) (*Wallets, error) {
 	wallets := Wallets{}
