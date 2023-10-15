@@ -19,12 +19,13 @@ const addressChecksumLen = 4
 type Wallet struct {
 	PrivateKey ecdsa.PrivateKey
 	PublicKey  []byte
+	Tag        string
 }
 
 // NewWallet creates and returns a Wallet
-func NewWallet() *Wallet {
+func NewWallet(tag string) *Wallet {
 	private, public := newKeyPair()
-	wallet := Wallet{private, public}
+	wallet := Wallet{private, public, tag}
 
 	return &wallet
 }

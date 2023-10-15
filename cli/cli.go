@@ -22,7 +22,7 @@ func (cli *CLI) printUsage() {
 	fmt.Println("  printchain - Print all the blocks of the blockchain")
 	fmt.Println("  createwallet - Generates a new key-pair and saves it into the wallet file")
 	fmt.Println("  send -from FROM -to TO -amount AMOUNT  - Send AMOUNT of coins from FROM address to To")
-	fmt.Println("  wallets  Get all wallet address")
+	fmt.Println("  getwallets Get all wallet address")
 }
 
 func (cli *CLI) validateArgs() {
@@ -77,9 +77,9 @@ func (cli *CLI) printChain() {
 		}
 	}
 }
-func (cli *CLI) createWallet(nodeID string) {
+func (cli *CLI) createWallet(nodeID string, tag string) {
 	wallets, _ := blockchain.NewWallets(nodeID)
-	address := wallets.CreateWallet()
+	address := wallets.CreateWallet(tag)
 	wallets.SaveToFile(nodeID)
 	fmt.Printf("Your new address: %s\n", address)
 }
@@ -89,8 +89,8 @@ func (cli *CLI) getWallets() {
 		log.Panic(err)
 	}
 	addresses := wallets.GetAddresses()
-	for _, address := range addresses {
-		fmt.Println("Wallet Address", address)
+	for address, tag := range addresses {
+		fmt.Printf("Wallet Address %s %s \n", address, tag)
 	}
 }
 
@@ -105,6 +105,7 @@ func (cli *CLI) Run() {
 	createBlockchainAddress := createBlockchainCmd.String("address", "", "The address to send genesis block reward to")
 	getWallets := flag.NewFlagSet("getwallets", flag.ExitOnError)
 	createWalletCmd := flag.NewFlagSet("createwallet", flag.ExitOnError)
+	createWalletTag := createWalletCmd.String("tag", "", "Tag for wallet")
 	sendCmd := flag.NewFlagSet("send", flag.ExitOnError)
 	sendFrom := sendCmd.String("from", "", "Source wallet address")
 	sendTo := sendCmd.String("To", "", "Destination wallet address")
@@ -166,7 +167,11 @@ func (cli *CLI) Run() {
 		cli.createBlockchain(*createBlockchainAddress)
 	}
 	if createWalletCmd.Parsed() {
-		cli.createWallet(nodeID)
+		if *createWalletTag == "" {
+			createWalletCmd.Usage()
+			os.Exit(1)
+		}
+		cli.createWallet(nodeID, *createWalletTag)
 	}
 	if sendCmd.Parsed() {
 		if *sendFrom == "" || *sendTo == "" || *sendAmount <= 0 {

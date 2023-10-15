@@ -245,7 +245,6 @@ func NewBlockchain(address string) *Blockchain {
 	bc := Blockchain{tip: tip, DB: db}
 	return &bc
 }
-
 /*
 responsible for creating a new blockchain instance and initializing it with a genesis block.
 */
@@ -254,7 +253,6 @@ func CreateBlockchain(address string) *Blockchain {
 		fmt.Println("Blockchain already exists.")
 		os.Exit(1)
 	}
-
 	var tip []byte
 	db, err := bolt.Open(dbFile, 0600, nil)
 	if err != nil {
