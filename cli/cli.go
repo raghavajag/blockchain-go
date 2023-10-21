@@ -2,6 +2,7 @@ package cli
 
 import (
 	"blockchain/blockchain"
+	"blockchain/utils"
 	"flag"
 	"fmt"
 	"log"
@@ -31,21 +32,44 @@ func (cli *CLI) validateArgs() {
 		os.Exit(1)
 	}
 }
-func (cli *CLI) send(from string, to string, amount int) {
-	bc := blockchain.NewBlockchain(from)
+func (cli *CLI) send(from, to string, amount int, nodeID string) {
+	if !blockchain.ValidateAddress(from) {
+		log.Panic("ERROR: Sender address is not valid")
+	}
+	if !blockchain.ValidateAddress(to) {
+		log.Panic("ERROR: Recipient address is not valid")
+	}
+	bc := blockchain.NewBlockchain(nodeID)
+	UTXOSet := blockchain.UTXOSet{Blockchain: bc}
 	defer bc.DB.Close()
 
-	tx := blockchain.NewUTXOTransaction(from, to, amount, bc)
-	bc.MineBlock([]*blockchain.Transaction{tx})
+	wallets, err := blockchain.NewWallets(nodeID)
+	if err != nil {
+		log.Panic(err)
+	}
+	wallet := wallets.GetWallet(from)
+	tx := blockchain.NewUTXOTransaction(&wallet, to, amount, &UTXOSet)
+
+	cbTx := blockchain.NewCoinbaseTX(from, "")
+	txs := []*blockchain.Transaction{cbTx, tx}
+
+	newBlock := bc.MineBlock(txs)
+	UTXOSet.Update(newBlock)
 	fmt.Println("Success!")
 }
 
-func (cli *CLI) getBalance(address string) {
-	bc := blockchain.NewBlockchain(address)
+func (cli *CLI) getBalance(address, nodeID string) {
+	if !blockchain.ValidateAddress(address) {
+		log.Panic("ERROR: Address is not valid")
+	}
+	bc := blockchain.NewBlockchain(nodeID)
+	UTXOSet := blockchain.UTXOSet{Blockchain: bc}
 	defer bc.DB.Close()
 
 	balance := 0
-	UTXOs := bc.FindUTXO(address)
+	pubKeyHash := utils.Base58Decode([]byte(address))
+	pubKeyHash = pubKeyHash[1 : len(pubKeyHash)-4]
+	UTXOs := UTXOSet.FindUTXO(pubKeyHash)
 
 	for _, out := range UTXOs {
 		balance += out.Value
@@ -53,9 +77,16 @@ func (cli *CLI) getBalance(address string) {
 
 	fmt.Printf("Balance of '%s': %d\n", address, balance)
 }
-func (cli *CLI) createBlockchain(address string) {
-	bc := blockchain.CreateBlockchain(address)
-	bc.DB.Close()
+func (cli *CLI) createBlockchain(address, nodeID string) {
+	if !blockchain.ValidateAddress(address) {
+		log.Panic("ERROR: Address is not valid")
+	}
+	bc := blockchain.CreateBlockchain(address, nodeID)
+	defer bc.DB.Close()
+
+	UTXOSet := blockchain.UTXOSet{Blockchain: bc}
+	UTXOSet.Reindex()
+
 	fmt.Println("Done!")
 }
 
@@ -157,14 +188,14 @@ func (cli *CLI) Run() {
 			getBalanceCmd.Usage()
 			os.Exit(1)
 		}
-		cli.getBalance(*getBalanceAddress)
+		cli.getBalance(*getBalanceAddress, nodeID)
 	}
 	if createBlockchainCmd.Parsed() {
 		if *createBlockchainAddress == "" {
 			createBlockchainCmd.Usage()
 			os.Exit(1)
 		}
-		cli.createBlockchain(*createBlockchainAddress)
+		cli.createBlockchain(*createBlockchainAddress, nodeID)
 	}
 	if createWalletCmd.Parsed() {
 		if *createWalletTag == "" {
@@ -178,7 +209,7 @@ func (cli *CLI) Run() {
 			sendCmd.Usage()
 			os.Exit(1)
 		}
-		cli.send(*sendFrom, *sendTo, *sendAmount)
+		cli.send(*sendFrom, *sendTo, *sendAmount, nodeID)
 	}
 
 	if getWallets.Parsed() {

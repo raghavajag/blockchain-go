@@ -85,3 +85,6 @@ func (ws Wallets) SaveToFile(nodeID string) {
 		log.Panic(err)
 	}
 }
+func (ws Wallets) GetWallet(address string) Wallet {
+	return *ws.Wallets[address]
+}
