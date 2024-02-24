@@ -84,7 +84,7 @@ func handleConnection(conn net.Conn, bc *blockchain.Blockchain) {
 	fmt.Printf("Received %s command\n", command)
 	switch command {
 	case "version":
-		// handle version from Nodes.
+		handleVersion(request, bc)
 	default:
 		fmt.Println("Unknown command!")
 
@@ -138,4 +138,22 @@ func nodeIsKnown(addr string) bool {
 		}
 	}
 	return false
+}
+func handleVersion(request []byte, bc *blockchain.Blockchain) {
+	var buff bytes.Buffer
+	var payload verzion
+
+	buff.Write(request[commandLength:])
+	dec := gob.NewDecoder(&buff)
+	err := dec.Decode(&payload)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	fmt.Printf("Received version data %d bestHeight: %d addr: %s\n", payload.Version, payload.BestHeight, payload.AddrFrom)
+	fmt.Printf("My version data %d bestHeight: %d addr: %s\n", nodeVersion, bc.GetBestHeight(), nodeAddress)
+
+	if !nodeIsKnown(payload.AddrFrom) {
+		KnownNodes = append(KnownNodes, payload.AddrFrom)
+	}
 }
