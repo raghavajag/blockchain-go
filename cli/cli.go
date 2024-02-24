@@ -2,6 +2,7 @@ package cli
 
 import (
 	"blockchain/blockchain"
+	"blockchain/network"
 	"blockchain/utils"
 	"flag"
 	"fmt"
@@ -14,7 +15,7 @@ type CLI struct {
 	BC *blockchain.Blockchain
 }
 
-const nodeID = "5000"
+var nodeID string
 
 func (cli *CLI) printUsage() {
 	fmt.Println("Usage:")
@@ -24,6 +25,7 @@ func (cli *CLI) printUsage() {
 	fmt.Println("  createwallet - Generates a new key-pair and saves it into the wallet file")
 	fmt.Println("  send -from FROM -to TO -amount AMOUNT  - Send AMOUNT of coins from FROM address to To")
 	fmt.Println("  getwallets Get all wallet address")
+	fmt.Println("  startnode -miner ADDRESS - Start a node with ID specified in NODE_ID env. var. -miner enables mining")
 }
 
 func (cli *CLI) validateArgs() {
@@ -32,7 +34,7 @@ func (cli *CLI) validateArgs() {
 		os.Exit(1)
 	}
 }
-func (cli *CLI) send(from, to string, amount int, nodeID string) {
+func (cli *CLI) send(from, to string, amount int, nodeID string, mineNow bool) {
 	if !blockchain.ValidateAddress(from) {
 		log.Panic("ERROR: Sender address is not valid")
 	}
@@ -50,11 +52,17 @@ func (cli *CLI) send(from, to string, amount int, nodeID string) {
 	wallet := wallets.GetWallet(from)
 	tx := blockchain.NewUTXOTransaction(&wallet, to, amount, &UTXOSet)
 
-	cbTx := blockchain.NewCoinbaseTX(from, "")
-	txs := []*blockchain.Transaction{cbTx, tx}
+	if mineNow {
+		cbTx := blockchain.NewCoinbaseTX(from, "")
+		txs := []*blockchain.Transaction{cbTx, tx}
 
-	newBlock := bc.MineBlock(txs)
-	UTXOSet.Update(newBlock)
+		newBlock := bc.MineBlock(txs)
+		UTXOSet.Update(newBlock)
+	} else {
+		// send transactions to the miner
+		// network.SendTx(network.KnownNodes[0], tx)
+	}
+
 	fmt.Println("Success!")
 }
 
@@ -121,20 +129,33 @@ func (cli *CLI) createWallet(nodeID string, tag string) {
 	fmt.Printf("Your new address: %s\n", address)
 }
 func (cli *CLI) getWallets() {
-	wallets, err := blockchain.NewWallets(nodeID)
-	if err != nil {
-		log.Panic(err)
+	wallets := blockchain.Wallets{}
+	wallets.Wallets = make(map[string]*blockchain.Wallet)
+	wallets.LoadFromFiles()
+	for address, wallet := range wallets.Wallets {
+		fmt.Printf("Wallet Address %s %s \n", address, wallet.Tag)
 	}
-	addresses := wallets.GetAddresses()
-	for address, tag := range addresses {
-		fmt.Printf("Wallet Address %s %s \n", address, tag)
+}
+func (cli *CLI) startNode(nodeID, minerAddress string) {
+	fmt.Printf("Starting node %s\n", nodeID)
+	if len(minerAddress) > 0 {
+		if blockchain.ValidateAddress(minerAddress) {
+			fmt.Println("Mining is on. Address to receive rewards: ", minerAddress)
+		} else {
+			log.Panic("Wrong miner address!")
+		}
 	}
+	network.StartServer(nodeID, minerAddress)
 }
 
 // Run parses command line arguments and processes commands
 func (cli *CLI) Run() {
 	cli.validateArgs()
-
+	nodeID := os.Getenv("NODE_ID")
+	if nodeID == "" {
+		fmt.Printf("NODE_ID env. var is not set!")
+		os.Exit(1)
+	}
 	getBalanceCmd := flag.NewFlagSet("getbalance", flag.ExitOnError)
 	printChainCmd := flag.NewFlagSet("printchain", flag.ExitOnError)
 	createBlockchainCmd := flag.NewFlagSet("createblockchain", flag.ExitOnError)
@@ -147,6 +168,9 @@ func (cli *CLI) Run() {
 	sendFrom := sendCmd.String("from", "", "Source wallet address")
 	sendTo := sendCmd.String("To", "", "Destination wallet address")
 	sendAmount := sendCmd.Int("amount", 0, "Amount to send")
+	startNodeCmd := flag.NewFlagSet("startnode", flag.ExitOnError)
+	startNodeMiner := startNodeCmd.String("miner", "", "Enable mining mode and send reward to ADDRESS")
+	sendMine := sendCmd.Bool("mine", false, "Mine immediately on the same node")
 
 	switch os.Args[1] {
 	case "printchain":
@@ -177,6 +201,11 @@ func (cli *CLI) Run() {
 
 	case "getwallets":
 		err := getWallets.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+		}
+	case "startnode":
+		err := startNodeCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Panic(err)
 		}
@@ -215,9 +244,17 @@ func (cli *CLI) Run() {
 			sendCmd.Usage()
 			os.Exit(1)
 		}
-		cli.send(*sendFrom, *sendTo, *sendAmount, nodeID)
-	}
 
+		cli.send(*sendFrom, *sendTo, *sendAmount, nodeID, *sendMine)
+	}
+	if startNodeCmd.Parsed() {
+		nodeID := os.Getenv("NODE_ID")
+		if nodeID == "" {
+			startNodeCmd.Usage()
+			os.Exit(1)
+		}
+		cli.startNode(nodeID, *startNodeMiner)
+	}
 	if getWallets.Parsed() {
 		cli.getWallets()
 	}
