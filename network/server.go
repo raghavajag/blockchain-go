@@ -24,6 +24,14 @@ type verzion struct {
 	BestHeight int
 	AddrFrom   string
 }
+type getblocks struct {
+	AddrFrom string
+}
+type inv struct {
+	AddrFrom string
+	Type     string
+	Items    [][]byte
+}
 
 func commandToBytes(command string) []byte {
 	var bytes [commandLength]byte
@@ -85,6 +93,8 @@ func handleConnection(conn net.Conn, bc *blockchain.Blockchain) {
 	switch command {
 	case "version":
 		handleVersion(request, bc)
+	case "getblocks":
+		handleGetBlocks(request, bc)
 	default:
 		fmt.Println("Unknown command!")
 
@@ -93,7 +103,7 @@ func handleConnection(conn net.Conn, bc *blockchain.Blockchain) {
 }
 func sendVersion(addr string, bc *blockchain.Blockchain) {
 	// get Best Height of the running Node
-	var bestHeight int = 0
+	var bestHeight = bc.GetBestHeight()
 	playload := gobEncode(verzion{nodeVersion, bestHeight, nodeAddress})
 	request := append(commandToBytes("version"), playload...)
 	sendData(addr, request)
@@ -153,7 +163,42 @@ func handleVersion(request []byte, bc *blockchain.Blockchain) {
 	fmt.Printf("Received version data %d bestHeight: %d addr: %s\n", payload.Version, payload.BestHeight, payload.AddrFrom)
 	fmt.Printf("My version data %d bestHeight: %d addr: %s\n", nodeVersion, bc.GetBestHeight(), nodeAddress)
 
+	myBestHeight := bc.GetBestHeight()
+	foreignerBestHeight := payload.BestHeight
+
+	if myBestHeight < foreignerBestHeight {
+		// request for the blocks from the foreigner
+		sendGetBlocks(payload.AddrFrom)
+	} else if myBestHeight > foreignerBestHeight {
+		// send blocks to the foreigner
+		sendVersion(payload.AddrFrom, bc)
+	}
 	if !nodeIsKnown(payload.AddrFrom) {
 		KnownNodes = append(KnownNodes, payload.AddrFrom)
 	}
+}
+func sendGetBlocks(address string) {
+	payload := gobEncode(getblocks{nodeAddress})
+	request := append(commandToBytes("getblocks"), payload...)
+
+	sendData(address, request)
+}
+func handleGetBlocks(request []byte, bc *blockchain.Blockchain) {
+	var buff bytes.Buffer
+	var payload getblocks
+	buff.Write(request[commandLength:])
+	dec := gob.NewDecoder(&buff)
+	err := dec.Decode(&payload)
+	if err != nil {
+		log.Panic(err)
+	}
+	blocks := bc.GetBlockHashes()
+	sendInv(payload.AddrFrom, "block", blocks)
+
+}
+func sendInv(address, kind string, items [][]byte) {
+	inventory := inv{nodeAddress, kind, items}
+	payload := gobEncode(inventory)
+	request := append(commandToBytes("inv"), payload...)
+	sendData(address, request)
 }
