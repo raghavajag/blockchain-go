@@ -18,8 +18,17 @@ const commandLength = 12
 var nodeAddress string
 var miningAddress string
 var KnownNodes = []string{"localhost:3000"}
+var blocksInTransit = [][]byte{}
 
-type Payload interface{}
+type block struct {
+	AddrFrom string
+	Block    []byte
+}
+type getdata struct {
+	AddrFrom string
+	Type     string
+	ID       []byte
+}
 type verzion struct {
 	Version    int
 	BestHeight int
@@ -153,16 +162,11 @@ func nodeIsKnown(addr string) bool {
 	return false
 }
 func handleVersion(request []byte, bc *blockchain.Blockchain) {
-	var buff bytes.Buffer
-	var payload verzion
-
-	buff.Write(request[commandLength:])
-	dec := gob.NewDecoder(&buff)
-	err := dec.Decode(&payload)
+	payload := verzion{}
+	err := handleRequest(request, &payload)
 	if err != nil {
 		log.Panic(err)
 	}
-
 	fmt.Printf("Received version data %d bestHeight: %d addr: %s\n", payload.Version, payload.BestHeight, payload.AddrFrom)
 	fmt.Printf("My version data %d bestHeight: %d addr: %s\n", nodeVersion, bc.GetBestHeight(), nodeAddress)
 
@@ -204,6 +208,26 @@ func sendInv(address, kind string, items [][]byte) {
 }
 
 func handleInv(request []byte, bc *blockchain.Blockchain) {
+	var payload inv
+	err := handleRequest(request, &payload)
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Printf("Recevied inventory with %d %s\n", len(payload.Items), payload.Type)
+	if payload.Type == "block" {
+		blocksInTransit = payload.Items
+
+		blockHash := payload.Items[0]
+		sendGetData(payload.AddrFrom, "block", blockHash)
+
+		newInTransit := [][]byte{}
+		for _, b := range blocksInTransit {
+			if bytes.Compare(b, blockHash) != 0 {
+				newInTransit = append(newInTransit, b)
+			}
+		}
+		blocksInTransit = newInTransit
+	}
 }
 func handleRequest(request []byte, payload interface{}) error {
 	var buff bytes.Buffer
@@ -214,4 +238,10 @@ func handleRequest(request []byte, payload interface{}) error {
 		return err
 	}
 	return nil
+}
+func sendGetData(address, kind string, id []byte) {
+	payload := gobEncode(getdata{nodeAddress, kind, id})
+	request := append(commandToBytes("getdata"), payload...)
+
+	sendData(address, request)
 }
