@@ -19,6 +19,7 @@ var nodeAddress string
 var miningAddress string
 var KnownNodes = []string{"localhost:3000"}
 
+type Payload interface{}
 type verzion struct {
 	Version    int
 	BestHeight int
@@ -95,6 +96,8 @@ func handleConnection(conn net.Conn, bc *blockchain.Blockchain) {
 		handleVersion(request, bc)
 	case "getblocks":
 		handleGetBlocks(request, bc)
+	case "inv":
+		handleInv(request, bc)
 	default:
 		fmt.Println("Unknown command!")
 
@@ -184,21 +187,31 @@ func sendGetBlocks(address string) {
 	sendData(address, request)
 }
 func handleGetBlocks(request []byte, bc *blockchain.Blockchain) {
-	var buff bytes.Buffer
-	var payload getblocks
-	buff.Write(request[commandLength:])
-	dec := gob.NewDecoder(&buff)
-	err := dec.Decode(&payload)
+	payload := getblocks{}
+	err := handleRequest(request, &payload)
 	if err != nil {
 		log.Panic(err)
 	}
+
 	blocks := bc.GetBlockHashes()
 	sendInv(payload.AddrFrom, "block", blocks)
-
 }
 func sendInv(address, kind string, items [][]byte) {
 	inventory := inv{nodeAddress, kind, items}
 	payload := gobEncode(inventory)
 	request := append(commandToBytes("inv"), payload...)
 	sendData(address, request)
+}
+
+func handleInv(request []byte, bc *blockchain.Blockchain) {
+}
+func handleRequest(request []byte, payload interface{}) error {
+	var buff bytes.Buffer
+	buff.Write(request[commandLength:])
+	dec := gob.NewDecoder(&buff)
+	err := dec.Decode(payload)
+	if err != nil {
+		return err
+	}
+	return nil
 }
