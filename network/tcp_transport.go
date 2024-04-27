@@ -1,7 +1,9 @@
 package network
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -19,6 +21,25 @@ func NewTCPTransport(addr string, peerCh chan *TCPPeer) *TCPTransport {
 	return &TCPTransport{
 		peerCh:     peerCh,
 		listenAddr: addr,
+	}
+}
+func (p *TCPPeer) readLoop(rpcCh chan RPC) {
+	buf := make([]byte, 4096)
+	for {
+		n, err := p.conn.Read(buf)
+		if err == io.EOF {
+			continue
+		}
+		if err != nil {
+			fmt.Printf("read error: %s", err)
+			continue
+		}
+
+		msg := buf[:n]
+		rpcCh <- RPC{
+			From:    p.conn.RemoteAddr(),
+			Payload: bytes.NewReader(msg),
+		}
 	}
 }
 func (t *TCPTransport) Start() error {
