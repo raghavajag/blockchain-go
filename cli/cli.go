@@ -2,7 +2,6 @@ package cli
 
 import (
 	"blockchain/blockchain"
-	"blockchain/network"
 	"blockchain/utils"
 	"flag"
 	"fmt"
@@ -145,7 +144,7 @@ func (cli *CLI) startNode(nodeID, minerAddress string) {
 			log.Panic("Wrong miner address!")
 		}
 	}
-	network.StartServer(nodeID, minerAddress)
+	// network.StartServer(nodeID, minerAddress)
 }
 
 // Run parses command line arguments and processes commands
