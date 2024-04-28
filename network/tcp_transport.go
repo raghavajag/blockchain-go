@@ -69,3 +69,7 @@ func (t *TCPTransport) acceptLoop() {
 		t.peerCh <- peer
 	}
 }
+func (p *TCPPeer) Send(b []byte) error {
+	_, err := p.conn.Write(b)
+	return err
+}
