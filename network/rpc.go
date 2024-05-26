@@ -12,9 +12,8 @@ import (
 type MessageType byte
 
 const (
-	// MessageTypeStatus    MessageType = 0x1
-	// MessageTypeGetStatus MessageType = 0x2
-	MessageTypeGetCount MessageType = 0x1
+	MessageTypeStatus    MessageType = 0x1
+	MessageTypeGetStatus MessageType = 0x2
 )
 
 type RPC struct {
@@ -53,14 +52,19 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 	// fmt.Printf("receiving message: %+v\n", msg.Header)
 
 	switch msg.Header {
-	case MessageTypeGetCount:
-		var count GetCountMessage
-		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(&count); err != nil {
-			return nil, err
+	case MessageTypeGetStatus:
+		return &DecodedMessage{
+			From: rpc.From,
+			Data: &GetStatusMessage{},
+		}, nil
+	case MessageTypeStatus:
+		statusMessage := new(StatusMessage)
+		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(statusMessage); err != nil {
+			return nil, fmt.Errorf("failed to decode status message: %s", err)
 		}
 		return &DecodedMessage{
 			From: rpc.From,
-			Data: count,
+			Data: statusMessage,
 		}, nil
 	default:
 		return nil, fmt.Errorf("invalid message header %x", msg.Header)

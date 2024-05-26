@@ -15,7 +15,6 @@ type ServerOpts struct {
 	SeedNodes     []string
 	TCPTransport  *TCPTransport
 	ID            string
-	Multiplier    int
 	RPCDecodeFunc RPCDecodeFunc
 	RPCProcessor  RPCProcessor
 }
@@ -24,7 +23,7 @@ type Server struct {
 	peerCh       chan *TCPPeer
 	rpcCh        chan RPC
 	Address      string
-	count        Count
+	peerMap      map[net.Addr]*TCPPeer
 	ServerOpts
 }
 
@@ -40,7 +39,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		peerCh:       peerCh,
 		ServerOpts:   opts,
 		rpcCh:        rpcCh,
-		count:        1,
+		peerMap:      make(map[net.Addr]*TCPPeer),
 	}
 	s.TCPTransport.peerCh = peerCh
 	if s.RPCProcessor == nil {
@@ -50,19 +49,42 @@ func NewServer(opts ServerOpts) (*Server, error) {
 }
 func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 	switch t := msg.Data.(type) {
-	case GetCountMessage:
-		fmt.Printf("Received count: %v from %s\n", t.Count, msg.From)
+	case *GetStatusMessage:
+		return s.processGetStatusMessage(msg.From, t)
+	case *StatusMessage:
+		return s.processStatusMessage(msg.From, t)
 	}
+
 	return nil
 }
-func (s *Server) startCounting() {
-	for {
-		time.Sleep(1 * time.Second)
-		s.count = Count(int(s.count) * s.ServerOpts.Multiplier)
+func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error {
+	fmt.Printf("Received status message from %s\n", from)
+	if data.CurrentHeight <= 1 {
+		fmt.Printf("cannot sync blockHeight to low %d from %s \n", data.CurrentHeight, from)
+		return nil
 	}
+
+	// request blocks from peer
+	return nil
+}
+func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) error {
+	fmt.Printf("Received get status message from %s\n", from)
+	statusMessage := &StatusMessage{
+		CurrentHeight: 1,
+		ID:            s.ID,
+	}
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(statusMessage); err != nil {
+		return err
+	}
+	peer, ok := s.peerMap[from]
+	if !ok {
+		return fmt.Errorf("peer not found")
+	}
+	msg := NewMessage(MessageTypeStatus, buf.Bytes())
+	return peer.Send(msg.Bytes())
 }
 func (s *Server) Start() {
-	go s.startCounting()
 	s.TCPTransport.Start()
 	fmt.Printf("Node listening on %s\n", s.ListenAddr)
 	time.Sleep(2 * time.Second)
@@ -74,8 +96,11 @@ func (s *Server) loop() {
 		select {
 		case peer := <-s.peerCh:
 			fmt.Printf("Peer %s connected\n", peer.conn.RemoteAddr())
+			s.peerMap[peer.conn.RemoteAddr()] = peer
 			go peer.readLoop(s.rpcCh)
-			go s.sendCount(peer)
+			if err := s.sendGetStatusMessage(peer); err != nil {
+				fmt.Printf("Error while sending get status message: %v", err)
+			}
 
 		case rpc := <-s.rpcCh:
 			msg, err := DefaultRPCDecodeFunc(rpc)
@@ -89,6 +114,17 @@ func (s *Server) loop() {
 			}
 		}
 	}
+}
+func (s *Server) sendGetStatusMessage(peer *TCPPeer) error {
+	var (
+		getStatusMsg = new(GetStatusMessage)
+		buf          = new(bytes.Buffer)
+	)
+	if err := gob.NewEncoder(buf).Encode(getStatusMsg); err != nil {
+		return err
+	}
+	msg := NewMessage(MessageTypeGetStatus, buf.Bytes())
+	return peer.Send(msg.Bytes())
 }
 func (s *Server) bootstrapNetwork() {
 	for _, addr := range s.SeedNodes {
@@ -105,15 +141,4 @@ func (s *Server) bootstrapNetwork() {
 			}
 		}(addr)
 	}
-}
-func (s *Server) sendCount(peer *TCPPeer) error {
-	var (
-		getCountMsg = &GetCountMessage{Count: s.count}
-		buf         = new(bytes.Buffer)
-	)
-	if err := gob.NewEncoder(buf).Encode(getCountMsg); err != nil {
-		return err
-	}
-	msg := NewMessage(MessageTypeGetCount, buf.Bytes())
-	return peer.Send(msg.Bytes())
 }

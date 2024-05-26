@@ -6,22 +6,21 @@ import (
 )
 
 func main() {
-	mainNode := makeServer("MAIN_NODE", ":3000", []string{":4000"}, 3)
+	mainNode := makeServer("MAIN_NODE", ":3000", []string{":4000"})
 	go mainNode.Start()
 
-	localNode := makeServer("LOCAL_NODE", ":4000", []string{}, 10)
+	localNode := makeServer("LOCAL_NODE", ":4000", []string{})
 
 	go localNode.Start()
 
 	select {}
 }
 
-func makeServer(id string, addr string, seedNodes []string, multiplier int) *network.Server {
+func makeServer(id string, addr string, seedNodes []string) *network.Server {
 	opts := network.ServerOpts{
 		ListenAddr: addr,
 		ID:         id,
 		SeedNodes:  seedNodes,
-		Multiplier: multiplier,
 	}
 
 	s, err := network.NewServer(opts)
