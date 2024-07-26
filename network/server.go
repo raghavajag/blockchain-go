@@ -1,10 +1,13 @@
 package network
 
 import (
+	"blockchain/blockchain"
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"time"
 )
 
@@ -24,6 +27,7 @@ type Server struct {
 	rpcCh        chan RPC
 	Address      string
 	peerMap      map[net.Addr]*TCPPeer
+	Blockchain   *blockchain.Blockchain
 	ServerOpts
 }
 
@@ -31,15 +35,55 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	if opts.RPCDecodeFunc == nil {
 		opts.RPCDecodeFunc = DefaultRPCDecodeFunc
 	}
+
+	wallets, _ := blockchain.NewWallets(opts.ID)
+	address := wallets.CreateWallet(opts.ID)
+	wallets.SaveToFile(opts.ID)
+	fmt.Printf("Your new address: %s\n", address)
+	var bc *blockchain.Blockchain
+
+	if opts.ID == "MAIN_NODE" {
+		// Create a new blockchain for the main node
+		bc = blockchain.CreateBlockchain(address, opts.ID)
+		// defer bc.DB.Close()
+	} else {
+		// Copy the blockchain from the main node and rename it for the local node
+		mainNodeBlockchainFile := "blockchain_MAIN_NODE.db"
+		localNodeBlockchainFile := "blockchain_" + opts.ID + ".db"
+
+		// Copy the main node's blockchain file to the local node
+		sourceFile, err := os.Open(mainNodeBlockchainFile)
+		if err != nil {
+			return nil, err
+		}
+		defer sourceFile.Close()
+
+		destinationFile, err := os.Create(localNodeBlockchainFile)
+		if err != nil {
+			return nil, err
+		}
+		defer destinationFile.Close()
+
+		_, err = io.Copy(destinationFile, sourceFile)
+		if err != nil {
+			return nil, err
+		}
+
+		bc = blockchain.NewBlockchain(opts.ID)
+	}
+	UTXOSet := blockchain.UTXOSet{Blockchain: bc}
+	UTXOSet.Reindex()
 	peerCh := make(chan *TCPPeer)
 	rpcCh := make(chan RPC)
 	tr := NewTCPTransport(opts.ListenAddr, peerCh)
+
 	s := &Server{
 		TCPTransport: tr,
 		peerCh:       peerCh,
 		ServerOpts:   opts,
 		rpcCh:        rpcCh,
 		peerMap:      make(map[net.Addr]*TCPPeer),
+		Blockchain:   bc,
 	}
 	s.TCPTransport.peerCh = peerCh
 	if s.RPCProcessor == nil {
@@ -59,7 +103,8 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 }
 func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error {
 	fmt.Printf("Received status message from %s\n", from)
-	if data.CurrentHeight <= 1 {
+	fmt.Printf("Current height: %d\n", s.Blockchain.GetBestHeight())
+	if data.CurrentHeight <= uint32(s.Blockchain.GetBestHeight()) {
 		fmt.Printf("cannot sync blockHeight to low %d from %s \n", data.CurrentHeight, from)
 		return nil
 	}
@@ -70,7 +115,7 @@ func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error 
 func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) error {
 	fmt.Printf("Received get status message from %s\n", from)
 	statusMessage := &StatusMessage{
-		CurrentHeight: 1,
+		CurrentHeight: uint32(s.Blockchain.GetBestHeight()),
 		ID:            s.ID,
 	}
 	buf := new(bytes.Buffer)
@@ -104,6 +149,7 @@ func (s *Server) loop() {
 
 		case rpc := <-s.rpcCh:
 			msg, err := DefaultRPCDecodeFunc(rpc)
+
 			if err != nil {
 				fmt.Printf("Error while decoding: %v", err)
 				continue
