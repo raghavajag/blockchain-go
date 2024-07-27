@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/go-kit/log"
 )
 
 type Count int
@@ -18,6 +20,7 @@ type ServerOpts struct {
 	SeedNodes     []string
 	TCPTransport  *TCPTransport
 	ID            string
+	Logger        log.Logger
 	RPCDecodeFunc RPCDecodeFunc
 	RPCProcessor  RPCProcessor
 }
@@ -35,7 +38,10 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	if opts.RPCDecodeFunc == nil {
 		opts.RPCDecodeFunc = DefaultRPCDecodeFunc
 	}
-
+	if opts.Logger == nil {
+		opts.Logger = log.NewLogfmtLogger(os.Stderr)
+		opts.Logger = log.With(opts.Logger, "addr", opts.ID)
+	}
 	wallets, _ := blockchain.NewWallets(opts.ID)
 	address := wallets.CreateWallet(opts.ID)
 	wallets.SaveToFile(opts.ID)
@@ -102,14 +108,13 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 	return nil
 }
 func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error {
-	fmt.Printf("Received status message from %s\n", from)
-	fmt.Printf("Current height: %d\n", s.Blockchain.GetBestHeight())
+	s.Logger.Log("msg", "Received status message", "from", from, "height", data.CurrentHeight)
+	s.Logger.Log("msg", "Current height", "height", s.Blockchain.GetBestHeight())
 	if data.CurrentHeight <= uint32(s.Blockchain.GetBestHeight()) {
-		fmt.Printf("cannot sync blockHeight to low %d from %s \n", data.CurrentHeight, from)
+		s.Logger.Log("msg", "cannot sync blockHeight to low", "height", data.CurrentHeight, "from", from)
 		return nil
 	}
 
-	// request blocks from peer
 	return nil
 }
 func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) error {
@@ -131,7 +136,7 @@ func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) 
 }
 func (s *Server) Start() {
 	s.TCPTransport.Start()
-	fmt.Printf("Node listening on %s\n", s.ListenAddr)
+	s.Logger.Log("msg", "accepting TCP connection on", "addr", s.ListenAddr, "id", s.ID)
 	time.Sleep(2 * time.Second)
 	s.bootstrapNetwork()
 	go s.loop()
@@ -144,18 +149,18 @@ func (s *Server) loop() {
 			s.peerMap[peer.conn.RemoteAddr()] = peer
 			go peer.readLoop(s.rpcCh)
 			if err := s.sendGetStatusMessage(peer); err != nil {
-				fmt.Printf("Error while sending get status message: %v", err)
+				s.Logger.Log("err", err)
 			}
-
+			s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
 		case rpc := <-s.rpcCh:
 			msg, err := DefaultRPCDecodeFunc(rpc)
 
 			if err != nil {
-				fmt.Printf("Error while decoding: %v", err)
+				s.Logger.Log("RPC error", err)
 				continue
 			}
 			if err := s.RPCProcessor.ProcessMessage(msg); err != nil {
-				fmt.Printf("Error while processing message: %v", err)
+				s.Logger.Log("error", err)
 				continue
 			}
 		}
