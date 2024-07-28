@@ -490,3 +490,31 @@ func (bc *Blockchain) GetBlockHashes() [][]byte {
 	}
 	return blocks
 }
+func (bc *Blockchain) GetBlockByHeight(height int) (*Block, error) {
+	var block *Block
+
+	iter := bc.Iterator()
+
+	for {
+		currentBlock := iter.Next()
+
+		if currentBlock == nil {
+			break
+		}
+
+		if currentBlock.Height == height {
+			block = currentBlock
+			break
+		}
+
+		if currentBlock.Height < height {
+			return nil, errors.New("Block height out of range")
+		}
+	}
+
+	if block == nil {
+		return nil, errors.New("Block not found")
+	}
+
+	return block, nil
+}

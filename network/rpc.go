@@ -16,6 +16,7 @@ const (
 	MessageTypeGetStatus MessageType = 0x2
 	MessageTypeGetBlocks MessageType = 0x3
 	MessageTypeBlock     MessageType = 0x4
+	MessageTypeBlocks    MessageType = 0x5
 )
 
 type RPC struct {

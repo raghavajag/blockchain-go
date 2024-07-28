@@ -103,9 +103,46 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 		return s.processGetStatusMessage(msg.From, t)
 	case *StatusMessage:
 		return s.processStatusMessage(msg.From, t)
+	case *GetBlocksMessage:
+		return s.processGetBlocksMessage(msg.From, t)
+	}
+	return nil
+}
+func (s *Server) processGetBlocksMessage(from net.Addr, data *GetBlocksMessage) error {
+	s.Logger.Log("msg", "received getBlocks message", "from", from)
+
+	var (
+		blocks    = []*blockchain.Block{}
+		ourHeight = s.Blockchain.GetBestHeight()
+	)
+
+	if data.To == 0 {
+		for i := int(data.From); i <= int(ourHeight); i++ {
+			block, err := s.Blockchain.GetBlockByHeight(i)
+			if err != nil {
+				return err
+			}
+
+			blocks = append(blocks, block)
+		}
 	}
 
-	return nil
+	blocksMsg := &BlocksMessage{
+		Blocks: blocks,
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(blocksMsg); err != nil {
+		return err
+	}
+
+	msg := NewMessage(MessageTypeBlocks, buf.Bytes())
+	peer, ok := s.peerMap[from]
+	if !ok {
+		return fmt.Errorf("peer %s not known", from)
+	}
+
+	return peer.Send(msg.Bytes())
 }
 func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error {
 	s.Logger.Log("msg", "Received status message", "from", from, "height", data.CurrentHeight)
@@ -114,8 +151,39 @@ func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error 
 		s.Logger.Log("msg", "cannot sync blockHeight to low", "height", data.CurrentHeight, "from", from)
 		return nil
 	}
-
+	go s.requestBlocksLoop(from)
 	return nil
+}
+func (s *Server) requestBlocksLoop(peer net.Addr) error {
+	ticker := time.NewTicker(3 * time.Second)
+
+	for {
+		ourHeight := uint32(s.Blockchain.GetBestHeight())
+
+		s.Logger.Log("msg", "requesting new blocks", "requesting height", ourHeight+1)
+
+		// In this case we are 100% sure that the node has blocks heigher than us.
+		getBlocksMessage := &GetBlocksMessage{
+			From: ourHeight + 1,
+			To:   0,
+		}
+
+		buf := new(bytes.Buffer)
+		if err := gob.NewEncoder(buf).Encode(getBlocksMessage); err != nil {
+			return err
+		}
+		msg := NewMessage(MessageTypeGetBlocks, buf.Bytes())
+		peer, ok := s.peerMap[peer]
+		if !ok {
+			return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
+		}
+
+		if err := peer.Send(msg.Bytes()); err != nil {
+			s.Logger.Log("error", "failed to send to peer", "err", err, "peer", peer)
+		}
+
+		<-ticker.C
+	}
 }
 func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) error {
 	fmt.Printf("Received get status message from %s\n", from)
