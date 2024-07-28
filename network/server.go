@@ -105,7 +105,22 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 		return s.processStatusMessage(msg.From, t)
 	case *GetBlocksMessage:
 		return s.processGetBlocksMessage(msg.From, t)
+	case *BlocksMessage:
+		return s.processBlocksMessage(msg.From, t)
 	}
+	return nil
+}
+func (s *Server) processBlocksMessage(from net.Addr, data *BlocksMessage) error {
+	s.Logger.Log("msg", "received BLOCKS!", "from", from)
+
+	for _, block := range data.Blocks {
+		if err := s.Blockchain.AddBlock(block); err != nil {
+			s.Logger.Log("error", err.Error())
+			return err
+		}
+	}
+	UTXOSet := blockchain.UTXOSet{Blockchain: s.Blockchain}
+	UTXOSet.Reindex()
 	return nil
 }
 func (s *Server) processGetBlocksMessage(from net.Addr, data *GetBlocksMessage) error {

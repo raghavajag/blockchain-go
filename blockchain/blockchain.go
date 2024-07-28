@@ -518,3 +518,39 @@ func (bc *Blockchain) GetBlockByHeight(height int) (*Block, error) {
 
 	return block, nil
 }
+func (chain *Blockchain) AddBlock(block *Block) error {
+	err := chain.DB.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(blocksBucket))
+		blockInDb := b.Get(block.Hash)
+
+		if blockInDb != nil {
+			return nil
+		}
+
+		blockData := block.Serialize()
+		err := b.Put(block.Hash, blockData)
+		if err != nil {
+			return err
+		}
+
+		lastHash := b.Get([]byte("l"))
+		lastBlockData := b.Get(lastHash)
+		lastBlock := DeserializeBlock(lastBlockData)
+
+		if block.Height > lastBlock.Height {
+			err = b.Put([]byte("l"), block.Hash)
+			if err != nil {
+				return err
+			}
+			chain.tip = block.Hash
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return nil
+}
