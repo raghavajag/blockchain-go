@@ -13,7 +13,8 @@ import (
 	"github.com/go-kit/log"
 )
 
-type Count int
+var defaultBlockTime = 5 * time.Second
+
 type ServerOpts struct {
 	APIListenAddr string
 	ListenAddr    string
@@ -23,6 +24,7 @@ type ServerOpts struct {
 	Logger        log.Logger
 	RPCDecodeFunc RPCDecodeFunc
 	RPCProcessor  RPCProcessor
+	BlockTime     time.Duration
 }
 type Server struct {
 	TCPTransport *TCPTransport
@@ -31,10 +33,14 @@ type Server struct {
 	Address      string
 	peerMap      map[net.Addr]*TCPPeer
 	Blockchain   *blockchain.Blockchain
+	isValidator  bool
 	ServerOpts
 }
 
 func NewServer(opts ServerOpts) (*Server, error) {
+	if opts.BlockTime == time.Duration(0) {
+		opts.BlockTime = defaultBlockTime
+	}
 	if opts.RPCDecodeFunc == nil {
 		opts.RPCDecodeFunc = DefaultRPCDecodeFunc
 	}
@@ -90,12 +96,42 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		rpcCh:        rpcCh,
 		peerMap:      make(map[net.Addr]*TCPPeer),
 		Blockchain:   bc,
+		isValidator:  opts.ID == "MAIN_NODE",
 	}
 	s.TCPTransport.peerCh = peerCh
 	if s.RPCProcessor == nil {
 		s.RPCProcessor = s
 	}
+	if s.isValidator {
+		go s.validatorLoop()
+	}
 	return s, nil
+}
+func (s *Server) validatorLoop() {
+	ticker := time.NewTicker(s.BlockTime)
+
+	s.Logger.Log("msg", "Starting validator loop", "blockTime", s.BlockTime)
+
+	for {
+		fmt.Println("creating new block")
+
+		if err := s.createNewBlock(); err != nil {
+			s.Logger.Log("create block error", err)
+		}
+
+		<-ticker.C
+	}
+}
+
+func (s *Server) createNewBlock() error {
+	// get transactions from mempool
+	// verify each tx
+	// add coinbase tx
+	// mine block
+	// update utxo_bucket
+	// broadcast blocks
+	// clear mempool
+	return nil
 }
 func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 	switch t := msg.Data.(type) {
