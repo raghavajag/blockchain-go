@@ -1,6 +1,7 @@
 package network
 
 import (
+	"blockchain/api"
 	"blockchain/blockchain"
 	"bytes"
 	"encoding/gob"
@@ -28,6 +29,7 @@ type ServerOpts struct {
 }
 type Server struct {
 	TCPTransport *TCPTransport
+	txChan       chan *blockchain.Transaction
 	peerCh       chan *TCPPeer
 	rpcCh        chan RPC
 	Address      string
@@ -89,7 +91,21 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	rpcCh := make(chan RPC)
 	tr := NewTCPTransport(opts.ListenAddr, peerCh)
 
+	// Channel being used to communicate between the JSON RPC server
+	// and the node that will process this message.
+	txChan := make(chan *blockchain.Transaction)
+	if len(opts.APIListenAddr) > 0 {
+		apiServerCfg := api.ServerConfig{
+			Logger:     opts.Logger,
+			ListenAddr: opts.APIListenAddr,
+		}
+		apiServer := api.NewServer(apiServerCfg, bc, txChan)
+		go apiServer.Start()
+
+		opts.Logger.Log("msg", "JSON API server running", "port", opts.APIListenAddr)
+	}
 	s := &Server{
+		txChan:       txChan,
 		TCPTransport: tr,
 		peerCh:       peerCh,
 		ServerOpts:   opts,
