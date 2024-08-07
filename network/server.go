@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -30,16 +31,18 @@ type ServerOpts struct {
 	BlockTime     time.Duration
 }
 type Server struct {
-	TCPTransport  *TCPTransport
-	txChan        chan *blockchain.Transaction
-	peerCh        chan *TCPPeer
-	rpcCh         chan RPC
-	WalletAddress string
-	Wallet        blockchain.Wallet
-	mempool       map[string]blockchain.Transaction
-	peerMap       map[net.Addr]*TCPPeer
-	Blockchain    *blockchain.Blockchain
-	isValidator   bool
+	TCPTransport         *TCPTransport
+	txChan               chan *blockchain.Transaction
+	peerCh               chan *TCPPeer
+	rpcCh                chan RPC
+	WalletAddress        string
+	Wallet               blockchain.Wallet
+	mempool              map[string]blockchain.Transaction
+	peerMap              map[net.Addr]*TCPPeer
+	Blockchain           *blockchain.Blockchain
+	isValidator          bool
+	processedBlocks      map[string]bool
+	processedBlocksMutex sync.RWMutex
 	ServerOpts
 }
 
@@ -109,17 +112,18 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		opts.Logger.Log("msg", "JSON API server running", "port", opts.APIListenAddr)
 	}
 	s := &Server{
-		txChan:        txChan,
-		TCPTransport:  tr,
-		peerCh:        peerCh,
-		ServerOpts:    opts,
-		rpcCh:         rpcCh,
-		peerMap:       make(map[net.Addr]*TCPPeer),
-		Blockchain:    bc,
-		isValidator:   opts.ID == "MAIN_NODE",
-		WalletAddress: address,
-		Wallet:        wallets.GetWallet(address),
-		mempool:       make(map[string]blockchain.Transaction),
+		txChan:          txChan,
+		TCPTransport:    tr,
+		peerCh:          peerCh,
+		ServerOpts:      opts,
+		rpcCh:           rpcCh,
+		peerMap:         make(map[net.Addr]*TCPPeer),
+		Blockchain:      bc,
+		isValidator:     opts.ID == "MAIN_NODE",
+		WalletAddress:   address,
+		Wallet:          wallets.GetWallet(address),
+		mempool:         make(map[string]blockchain.Transaction),
+		processedBlocks: make(map[string]bool),
 	}
 	s.TCPTransport.peerCh = peerCh
 	if s.RPCProcessor == nil {
@@ -222,15 +226,33 @@ func (s *Server) processTransaction(tx *blockchain.Transaction) error {
 
 	return nil
 }
+func (s *Server) isBlockProcessed(b *blockchain.Block) bool {
+	s.processedBlocksMutex.RLock()
+	defer s.processedBlocksMutex.RUnlock()
+
+	_, exists := s.processedBlocks[string(b.Hash)]
+	return exists
+}
+func (s *Server) markBlockAsProcessed(b *blockchain.Block) {
+	s.processedBlocksMutex.Lock()
+	defer s.processedBlocksMutex.Unlock()
+
+	s.processedBlocks[string(b.Hash)] = true
+}
 func (s *Server) processBlock(b *blockchain.Block) error {
+	if s.isBlockProcessed(b) {
+		return nil
+	}
 	if err := s.Blockchain.AddBlock(b); err != nil {
 		s.Logger.Log("error", err.Error())
 		return err
 	}
-	s.Logger.Log("msg", "new block added to the blockchain", "hash", b.Hash)
 	UTXOSet := blockchain.UTXOSet{Blockchain: s.Blockchain}
 	UTXOSet.Reindex()
 
+	s.markBlockAsProcessed(b)
+
+	go s.broadcastBlock(b)
 	return nil
 }
 func (s *Server) ProcessMessage(msg *DecodedMessage) error {
