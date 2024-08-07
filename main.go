@@ -3,6 +3,7 @@ package main
 import (
 	"blockchain/network"
 	"log"
+	"time"
 )
 
 func main() {
@@ -13,6 +14,12 @@ func main() {
 
 	go localNode.Start()
 
+	time.Sleep(2 * time.Second)
+	err := mainNode.SendTransaction(localNode.WalletAddress, 2)
+	if err != nil {
+		log.Fatal(err)
+	}
+	time.Sleep(1 * time.Second)
 	select {}
 }
 

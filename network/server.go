@@ -5,9 +5,11 @@ import (
 	"blockchain/blockchain"
 	"bytes"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -28,14 +30,16 @@ type ServerOpts struct {
 	BlockTime     time.Duration
 }
 type Server struct {
-	TCPTransport *TCPTransport
-	txChan       chan *blockchain.Transaction
-	peerCh       chan *TCPPeer
-	rpcCh        chan RPC
-	Address      string
-	peerMap      map[net.Addr]*TCPPeer
-	Blockchain   *blockchain.Blockchain
-	isValidator  bool
+	TCPTransport  *TCPTransport
+	txChan        chan *blockchain.Transaction
+	peerCh        chan *TCPPeer
+	rpcCh         chan RPC
+	WalletAddress string
+	Wallet        blockchain.Wallet
+	mempool       map[string]blockchain.Transaction
+	peerMap       map[net.Addr]*TCPPeer
+	Blockchain    *blockchain.Blockchain
+	isValidator   bool
 	ServerOpts
 }
 
@@ -105,14 +109,17 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		opts.Logger.Log("msg", "JSON API server running", "port", opts.APIListenAddr)
 	}
 	s := &Server{
-		txChan:       txChan,
-		TCPTransport: tr,
-		peerCh:       peerCh,
-		ServerOpts:   opts,
-		rpcCh:        rpcCh,
-		peerMap:      make(map[net.Addr]*TCPPeer),
-		Blockchain:   bc,
-		isValidator:  opts.ID == "MAIN_NODE",
+		txChan:        txChan,
+		TCPTransport:  tr,
+		peerCh:        peerCh,
+		ServerOpts:    opts,
+		rpcCh:         rpcCh,
+		peerMap:       make(map[net.Addr]*TCPPeer),
+		Blockchain:    bc,
+		isValidator:   opts.ID == "MAIN_NODE",
+		WalletAddress: address,
+		Wallet:        wallets.GetWallet(address),
+		mempool:       make(map[string]blockchain.Transaction),
 	}
 	s.TCPTransport.peerCh = peerCh
 	if s.RPCProcessor == nil {
@@ -149,8 +156,26 @@ func (s *Server) createNewBlock() error {
 	// clear mempool
 	return nil
 }
+func (s *Server) processTransaction(tx *blockchain.Transaction) error {
+	if _, exists := s.mempool[hex.EncodeToString(tx.ID)]; exists {
+		return nil
+	}
+	// s.Logger.Log(
+	//     "msg", "adding new tx to mempool",
+	//     "hash", hash,
+	//     "mempoolPending", s.mempool.PendingCount(),
+	// )
+
+	s.mempool[hex.EncodeToString(tx.ID)] = *tx
+	s.Logger.Log("msg", "new transaction added to mempool", "tx", tx)
+	s.Logger.Log("msg", "mempool size", "size", len(s.mempool))
+
+	return nil
+}
 func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 	switch t := msg.Data.(type) {
+	case *blockchain.Transaction:
+		return s.processTransaction(t)
 	case *GetStatusMessage:
 		return s.processGetStatusMessage(msg.From, t)
 	case *StatusMessage:
@@ -287,6 +312,10 @@ func (s *Server) loop() {
 				s.Logger.Log("err", err)
 			}
 			s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
+		case tx := <-s.txChan:
+			if err := s.processTransaction(tx); err != nil {
+				s.Logger.Log("process TX error", err)
+			}
 		case rpc := <-s.rpcCh:
 			msg, err := DefaultRPCDecodeFunc(rpc)
 
@@ -327,4 +356,32 @@ func (s *Server) bootstrapNetwork() {
 			}
 		}(addr)
 	}
+}
+func (s *Server) SendTransaction(toAddress string, amount int) error {
+	UTXOSet := blockchain.UTXOSet{Blockchain: s.Blockchain}
+	tx := blockchain.NewUTXOTransaction(&s.Wallet, toAddress, amount, &UTXOSet)
+	buf := &bytes.Buffer{}
+	if err := gob.NewEncoder(buf).Encode(tx); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://localhost:8080/tx", buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	client := http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		s.Logger.Log("msg", "failed to send transaction", "error", err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server responded with status code: %d", resp.StatusCode)
+	}
+
+	return nil
 }
