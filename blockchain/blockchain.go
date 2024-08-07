@@ -158,14 +158,12 @@ func (bc *Blockchain) VerifyTransaction(tx *Transaction) bool {
 	return tx.Verify(prevTXs)
 }
 
-// MineBlock mines a new block with the provided transactions
 func (bc *Blockchain) MineBlock(transactions []*Transaction) *Block {
 	var lastHash []byte
 	var lastHeight int
 
 	for _, tx := range transactions {
-		// TODO: ignore transaction if it's not valid
-		if bc.VerifyTransaction(tx) != true {
+		if !bc.VerifyTransaction(tx) {
 			log.Panic("ERROR: Invalid transaction")
 		}
 	}
@@ -206,8 +204,19 @@ func (bc *Blockchain) MineBlock(transactions []*Transaction) *Block {
 	if err != nil {
 		log.Panic(err)
 	}
+	// Retrieve the newly added block from the database
+	var block *Block
+	err = bc.DB.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(blocksBucket))
+		blockData := b.Get(newBlock.Hash)
+		block = DeserializeBlock(blockData)
+		return nil
+	})
+	if err != nil {
+		log.Panic(err)
+	}
 
-	return newBlock
+	return block
 }
 
 // func NewUTXOTransaction(from string, to string, amount int, bc *Blockchain) *Transaction {

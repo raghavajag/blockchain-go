@@ -1,6 +1,7 @@
 package network
 
 import (
+	"blockchain/blockchain"
 	"bytes"
 	"crypto/elliptic"
 	"encoding/gob"
@@ -13,11 +14,11 @@ type MessageType byte
 
 const (
 	MessageTypeTx        MessageType = 0x1
-	MessageTypeBlock     MessageType = 0x2
+	MessageTypeBlock     MessageType = 0x2 // broadcasting the mined block
 	MessageTypeGetBlocks MessageType = 0x3
 	MessageTypeStatus    MessageType = 0x4
 	MessageTypeGetStatus MessageType = 0x5
-	MessageTypeBlocks    MessageType = 0x6
+	MessageTypeBlocks    MessageType = 0x6 // sending blocks to other nodes
 )
 
 type RPC struct {
@@ -89,6 +90,16 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 		return &DecodedMessage{
 			From: rpc.From,
 			Data: blocks,
+		}, nil
+	case MessageTypeBlock:
+		block := new(blockchain.Block)
+		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(block); err != nil {
+			return nil, err
+		}
+
+		return &DecodedMessage{
+			From: rpc.From,
+			Data: block,
 		}, nil
 	default:
 		return nil, fmt.Errorf("invalid message header %x", msg.Header)

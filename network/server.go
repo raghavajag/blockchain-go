@@ -154,6 +154,56 @@ func (s *Server) createNewBlock() error {
 	// update utxo_bucket
 	// broadcast blocks
 	// clear mempool
+	var txs []*blockchain.Transaction
+
+	for _, tx := range s.mempool {
+		if s.Blockchain.VerifyTransaction(&tx) {
+			txs = append(txs, &tx)
+		}
+	}
+
+	if len(txs) == 0 {
+		s.Logger.Log("msg", "All Transactions are invalid")
+		return nil
+	}
+
+	cbTx := blockchain.NewCoinbaseTX(s.WalletAddress, "")
+	txs = append(txs, cbTx)
+
+	newBlock := s.Blockchain.MineBlock(txs)
+	fmt.Printf("\n mined block %v\n", newBlock)
+	UTXOSet := blockchain.UTXOSet{Blockchain: s.Blockchain}
+	UTXOSet.Update(newBlock)
+
+	for _, tx := range txs {
+		delete(s.mempool, hex.EncodeToString(tx.ID))
+	}
+	s.Logger.Log("msg", "Broadcasting new block", "hash", newBlock.Hash)
+	if err := s.broadcastBlock(newBlock); err != nil {
+		s.Logger.Log("error", err)
+		return err
+	}
+
+	s.mempool = make(map[string]blockchain.Transaction)
+	s.Logger.Log("msg", "New Block mined", "hash", newBlock.Hash)
+	return nil
+}
+func (s *Server) broadcastBlock(b *blockchain.Block) error {
+	buf := &bytes.Buffer{}
+	if err := gob.NewEncoder(buf).Encode(b); err != nil {
+		return err
+	}
+	msg := NewMessage(MessageTypeBlock, buf.Bytes())
+	return s.broadcast(msg.Bytes())
+}
+func (s *Server) broadcast(payload []byte) error {
+	for netAddr, peer := range s.peerMap {
+		fmt.Printf("sending to peer %s\n", netAddr)
+		if err := peer.Send(payload); err != nil {
+			fmt.Printf("peer send error => addr %s [err: %s]\n", netAddr, err)
+		}
+	}
+
 	return nil
 }
 func (s *Server) processTransaction(tx *blockchain.Transaction) error {
@@ -172,8 +222,21 @@ func (s *Server) processTransaction(tx *blockchain.Transaction) error {
 
 	return nil
 }
+func (s *Server) processBlock(b *blockchain.Block) error {
+	if err := s.Blockchain.AddBlock(b); err != nil {
+		s.Logger.Log("error", err.Error())
+		return err
+	}
+	s.Logger.Log("msg", "new block added to the blockchain", "hash", b.Hash)
+	UTXOSet := blockchain.UTXOSet{Blockchain: s.Blockchain}
+	UTXOSet.Reindex()
+
+	return nil
+}
 func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 	switch t := msg.Data.(type) {
+	case *blockchain.Block:
+		return s.processBlock(t)
 	case *blockchain.Transaction:
 		return s.processTransaction(t)
 	case *GetStatusMessage:
