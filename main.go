@@ -9,17 +9,21 @@ import (
 func main() {
 	mainNode := makeServer("MAIN_NODE", ":3000", []string{":4000"}, ":8080")
 	go mainNode.Start()
+	// mainNode.GetBalance()
 
 	localNode := makeServer("LOCAL_NODE_1", ":4000", []string{""}, "")
 
 	go localNode.Start()
+	// mainNode.GetBalance()
 
 	time.Sleep(2 * time.Second)
 	err := mainNode.SendTransaction(localNode.WalletAddress, 2)
 	if err != nil {
 		log.Fatal(err)
 	}
-	time.Sleep(1 * time.Second)
+	time.Sleep(8 * time.Second)
+	mainNode.GetBalance()
+	localNode.GetBalance()
 	select {}
 }
 

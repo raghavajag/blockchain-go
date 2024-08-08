@@ -3,6 +3,7 @@ package network
 import (
 	"blockchain/api"
 	"blockchain/blockchain"
+	"blockchain/utils"
 	"bytes"
 	"encoding/gob"
 	"encoding/hex"
@@ -469,4 +470,20 @@ func (s *Server) SendTransaction(toAddress string, amount int) error {
 	}
 
 	return nil
+}
+func (s *Server) GetBalance() {
+	if !blockchain.ValidateAddress(s.WalletAddress) {
+		s.Logger.Log("error", "Address is not valid")
+	}
+	UTXOSet := blockchain.UTXOSet{Blockchain: s.Blockchain}
+
+	balance := 0
+	pubKeyHash := utils.Base58Decode([]byte(s.WalletAddress))
+	pubKeyHash = pubKeyHash[1 : len(pubKeyHash)-4]
+	UTXOs := UTXOSet.FindUTXO(pubKeyHash)
+
+	for _, out := range UTXOs {
+		balance += out.Value
+	}
+	s.Logger.Log("msg", "Balance", "address", s.WalletAddress, "balance", balance)
 }
