@@ -1,8 +1,6 @@
-# Blockchain From Scratch in Go
+This project implements a basic blockchain and cryptocurrency from scratch. The goal is to demonstrate a blockchain's core concepts and features by building a simplified version from the ground up.
 
-![image](https://github.com/user-attachments/assets/d042bac6-4fe8-467c-8eaa-7522cc496f5b)
-
-This project implements a basic blockchain and cryptocurrency from scratch using the Go programming language. The goal is to demonstrate the core concepts and features of a blockchain by building a simplified version from the ground up.
+![blockchain-arch](https://github.com/user-attachments/assets/da186159-8a48-4dda-825f-83a5c758f642)
 
 ## Features
 
